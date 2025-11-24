@@ -17,7 +17,7 @@ def minmax(v):
     return v
 
 
-def main(fileName, sizeOfTheCell, layerNum, isDither, scale):
+def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
     """Convert an image file (fileName) to a GDS file
     """
     print("Converting an image file to a GDS file..")
@@ -52,10 +52,14 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale):
                 new_p = np.round(old_p / 255.0) * 255
                 gray[y, x] = new_p
                 error_p = old_p - new_p
-                gray[y, x + 1]       = minmax(gray[y, x + 1]       + error_p * 7 / 16.0)
-                gray[y + 1, x - 1]   = minmax(gray[y + 1, x - 1]   + error_p * 3 / 16.0)
-                gray[y + 1, x]       = minmax(gray[y + 1, x]       + error_p * 5 / 16.0)
-                gray[y + 1, x + 1]   = minmax(gray[y + 1, x + 1]   + error_p * 1 / 16.0)
+                gray[y, x + 1] = minmax(gray[y, x + 1] + error_p * 7 / 16.0)
+                gray[y + 1, x - 1] = minmax(
+                    gray[y + 1, x - 1] + error_p * 3 / 16.0
+                )
+                gray[y + 1, x] = minmax(gray[y + 1, x] + error_p * 5 / 16.0)
+                gray[y + 1, x + 1] = minmax(
+                    gray[y + 1, x + 1] + error_p * 1 / 16.0
+                )
 
         ret, binaryImage = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
     else:
@@ -81,6 +85,10 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale):
                 # OLD: binaryImage.itemset((y + 1, x + 1), 0)
                 binaryImage[y + 1, x + 1] = 0
 
+    # Invert image if requested (swap black and white)
+    if invert:
+        binaryImage = 255 - binaryImage
+
     # Output image.bmp
     cv2.imwrite("image.bmp", binaryImage)
 
@@ -94,20 +102,26 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale):
     unitCell.add(square)
 
     grid = lib.new_cell("GRID")
+    ys = 0.0
+    for y in range(height):
+        xs = 0.0
+        for x in range(width):
+            b = binaryImage[y, x]
+            if b == 0:
+                grid.add(
+                    gdspy.CellReference(
+                        unitCell, (xs * sizeOfTheCell, ys * sizeOfTheCell)
+                    )
+                )
 
-    for x in range(width):
-        for y in range(height):
-            if binaryImage[y, x] == 0:
-                print(f"({x}, {y}) is black")
-                cell = gdspy.CellReference(unitCell, origin=(x, height - y - 1))
-                grid.add(cell)
+            xs += 1.0
+        ys += 1.0
 
-    scaledGrid = gdspy.CellReference(
-        grid, origin=(0, 0), magnification=float(sizeOfTheCell)
-    )
-
-    # Add the top-cell to a layout and save
+    # Scaling needs to be done to align the minimum feature size to sizeOfTheCell
     top = lib.new_cell("TOP")
+    scaleFactor = sizeOfTheCell
+    scaledGrid = gdspy.CellReference(grid, (0.0, 0.0), magnification=scaleFactor)
+
     top.add(scaledGrid)
     lib.write_gds("image.gds")
 
@@ -125,6 +139,18 @@ if __name__ == "__main__":
     )
     parser.add_argument("--scale", default=1.0, type=float, help="scale")
     parser.add_argument("-d", action="store_true", help="Floyd–Steinberg dithering")
+    parser.add_argument(
+        "--invert",
+        action="store_true",
+        help="Invert binary image (black ↔ white) before creating GDS",
+    )
     args = parser.parse_args()
 
-    main(args.fileName, args.sizeOfTheCell, args.layerNum, args.d, args.scale)
+    main(
+        args.fileName,
+        args.sizeOfTheCell,
+        args.layerNum,
+        args.d,
+        args.scale,
+        args.invert,
+    )

@@ -16,10 +16,11 @@ def convert_to_gds(
     layer_number,
     scale_factor,
     use_dithering,
+    invert_gds,
 ):
     """
     Wraps picToGDS.py CLI:
-        python picToGDS.py [--scale SCALE] [-d] fileName sizeOfTheCell layerNum
+        python picToGDS.py [--scale SCALE] [-d] [--invert] fileName sizeOfTheCell layerNum
     """
     if image_path is None:
         raise gr.Error("Please upload an image first.")
@@ -50,6 +51,8 @@ def convert_to_gds(
             cmd += ["--scale", str(scale)]
         if use_dithering:
             cmd.append("-d")
+        if invert_gds:
+            cmd.append("--invert")
         cmd += [os.path.basename(in_path), str(cell_size), str(layer)]
 
         result = subprocess.run(
@@ -82,7 +85,6 @@ def convert_to_gds(
             gds_src,
             os.path.join(out_dir, os.path.basename(gds_src)),
         )
-
         bmp_out = None
         if bmp_src is not None:
             bmp_out = shutil.copy(
@@ -118,6 +120,10 @@ inputs = [
     gr.Checkbox(
         value=False,
         label="Use Floyd–Steinberg dithering (-d)",
+    ),
+    gr.Checkbox(
+        value=False,
+        label="Invert GDS (black ↔ white)",
     ),
 ]
 

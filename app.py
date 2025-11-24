@@ -16,11 +16,13 @@ def convert_to_gds(
     layer_number,
     scale_factor,
     use_dithering,
+    threshold_offset,
     invert_gds,
 ):
     """
     Wraps picToGDS.py CLI:
-        python picToGDS.py [--scale SCALE] [-d] [--invert] fileName sizeOfTheCell layerNum
+        python picToGDS.py [--scale SCALE] [-d] [--threshold_offset OFFSET] [--invert]
+                           fileName sizeOfTheCell layerNum
     """
     if image_path is None:
         raise gr.Error("Please upload an image first.")
@@ -29,8 +31,9 @@ def convert_to_gds(
         cell_size = float(cell_size_um)
         layer = int(layer_number)
         scale = float(scale_factor)
+        offset = float(threshold_offset)
     except ValueError:
-        raise gr.Error("Cell size, layer and scale must be numeric.")
+        raise gr.Error("Cell size, layer, scale and threshold offset must be numeric.")
 
     # Work in an isolated temp directory so multiple users don't clash
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -51,6 +54,8 @@ def convert_to_gds(
             cmd += ["--scale", str(scale)]
         if use_dithering:
             cmd.append("-d")
+        # Always pass the offset (0 = default behavior)
+        cmd += ["--threshold_offset", str(offset)]
         if invert_gds:
             cmd.append("--invert")
         cmd += [os.path.basename(in_path), str(cell_size), str(layer)]
@@ -121,6 +126,13 @@ inputs = [
         value=False,
         label="Use Floyd–Steinberg dithering (-d)",
     ),
+    gr.Slider(
+        minimum=-100,
+        maximum=100,
+        value=0,
+        step=1,
+        label="Threshold offset (relative to Otsu)",
+    ),
     gr.Checkbox(
         value=False,
         label="Invert GDS (black ↔ white)",
@@ -142,7 +154,8 @@ demo = gr.Interface(
     title="Picture → GDS Converter",
     description=(
         "Upload an image, choose cell size and layer, and convert it to a GDSII layout "
-        "using the original picToGDS script."
+        "using the original picToGDS script.\n\n"
+        "Play with the offset slider and submit again, if result is not as desired."
     ),
 )
 

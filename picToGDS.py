@@ -17,7 +17,7 @@ def minmax(v):
     return v
 
 
-def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
+def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, invert=False):
     """Convert an image file (fileName) to a GDS file
     """
     print("Converting an image file to a GDS file..")
@@ -27,7 +27,7 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
     if img_raw is None:
         raise FileNotFoundError(f"Could not read image from path: {fileName}")
 
-    # Fix scale if Gradio/Colab passes 0 or negative
+    # Fix scale if the caller passes 0 or negative
     if scale is None or scale <= 0:
         print(f"Warning: invalid scale={scale}, using 1.0 instead.")
         scale = 1.0
@@ -40,9 +40,10 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
     print(f"width:{width}")
     print(f"height:{height}")
 
-    # Convert an image to grayscale one
+    # Convert an image to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
+    # Optional Floyd–Steinberg dithering (operates in-place on gray)
     if isDither:
         # Floyd–Steinberg dithering
         # https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering
@@ -61,9 +62,17 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
                     gray[y + 1, x + 1] + error_p * 1 / 16.0
                 )
 
-        ret, binaryImage = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-    else:
-        ret, binaryImage = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
+    # --- Thresholding with Otsu + offset---
+    # First, compute Otsu threshold on the (possibly dithered) grayscale image
+    T_otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
+    # Apply offset from user (can be negative or positive)
+    T_effective = T_otsu + threshold_offset
+    # Clip to valid range
+    T_effective = float(np.clip(T_effective, 0, 255))
+    print(f"Otsu threshold: {T_otsu}, offset: {threshold_offset}, effective: {T_effective}")
+
+    # Now apply a standard binary threshold with the adjusted threshold
+    _, binaryImage = cv2.threshold(gray, T_effective, 255, cv2.THRESH_BINARY)
 
     # Fill orthological corner
     for x in range(width - 1):
@@ -74,7 +83,6 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
                 and binaryImage[y, x + 1] == 255
                 and binaryImage[y + 1, x + 1] == 0
             ):
-                # OLD: binaryImage.itemset((y + 1, x), 0)
                 binaryImage[y + 1, x] = 0
             elif (
                 binaryImage[y, x] == 255
@@ -82,14 +90,13 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, scale, invert=False):
                 and binaryImage[y, x + 1] == 0
                 and binaryImage[y + 1, x + 1] == 255
             ):
-                # OLD: binaryImage.itemset((y + 1, x + 1), 0)
                 binaryImage[y + 1, x + 1] = 0
 
     # Invert image if requested (swap black and white)
     if invert:
         binaryImage = 255 - binaryImage
 
-    # Output image.bmp
+    # Output image.bmp (preview of the binary pattern)
     cv2.imwrite("image.bmp", binaryImage)
 
     # The GDSII file is called a library, which contains multiple cells.
@@ -140,6 +147,15 @@ if __name__ == "__main__":
     parser.add_argument("--scale", default=1.0, type=float, help="scale")
     parser.add_argument("-d", action="store_true", help="Floyd–Steinberg dithering")
     parser.add_argument(
+        "--threshold_offset",
+        type=float,
+        default=0.0,
+        help=(
+            "Offset added to the Otsu threshold (negative values make more pixels black, "
+            "positive values make more pixels white)."
+        ),
+    )
+    parser.add_argument(
         "--invert",
         action="store_true",
         help="Invert binary image (black ↔ white) before creating GDS",
@@ -151,6 +167,7 @@ if __name__ == "__main__":
         args.sizeOfTheCell,
         args.layerNum,
         args.d,
+        args.threshold_offset,
         args.scale,
         args.invert,
     )

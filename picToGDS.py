@@ -27,7 +27,7 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, i
     if img_raw is None:
         raise FileNotFoundError(f"Could not read image from path: {fileName}")
 
-    # Fix scale if the caller passes 0 or negative
+    # Fix scale if caller passes 0 or negative
     if scale is None or scale <= 0:
         print(f"Warning: invalid scale={scale}, using 1.0 instead.")
         scale = 1.0
@@ -40,10 +40,10 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, i
     print(f"width:{width}")
     print(f"height:{height}")
 
-    # Convert an image to grayscale
+    # Convert image to grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
-    # Optional Floyd–Steinberg dithering (operates in-place on gray)
+    # Optional Floyd–Steinberg dithering
     if isDither:
         # Floyd–Steinberg dithering
         # https://en.wikipedia.org/wiki/Floyd%E2%80%93Steinberg_dithering
@@ -53,28 +53,20 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, i
                 new_p = np.round(old_p / 255.0) * 255
                 gray[y, x] = new_p
                 error_p = old_p - new_p
-                gray[y, x + 1] = minmax(gray[y, x + 1] + error_p * 7 / 16.0)
-                gray[y + 1, x - 1] = minmax(
-                    gray[y + 1, x - 1] + error_p * 3 / 16.0
-                )
-                gray[y + 1, x] = minmax(gray[y + 1, x] + error_p * 5 / 16.0)
-                gray[y + 1, x + 1] = minmax(
-                    gray[y + 1, x + 1] + error_p * 1 / 16.0
-                )
+                gray[y, x + 1]     = minmax(gray[y, x + 1]     + error_p * 7 / 16.0)
+                gray[y + 1, x - 1] = minmax(gray[y + 1, x - 1] + error_p * 3 / 16.0)
+                gray[y + 1, x]     = minmax(gray[y + 1, x]     + error_p * 5 / 16.0)
+                gray[y + 1, x + 1] = minmax(gray[y + 1, x + 1] + error_p * 1 / 16.0)
 
-    # --- Thresholding with Otsu + offset---
-    # First, compute Otsu threshold on the (possibly dithered) grayscale image
+    # --- Thresholding: Otsu + user offset ---
     T_otsu, _ = cv2.threshold(gray, 0, 255, cv2.THRESH_OTSU)
-    # Apply offset from user (can be negative or positive)
     T_effective = T_otsu + threshold_offset
-    # Clip to valid range
     T_effective = float(np.clip(T_effective, 0, 255))
     print(f"Otsu threshold: {T_otsu}, offset: {threshold_offset}, effective: {T_effective}")
 
-    # Now apply a standard binary threshold with the adjusted threshold
     _, binaryImage = cv2.threshold(gray, T_effective, 255, cv2.THRESH_BINARY)
 
-    # Fill orthological corner
+    # Fill orthological corner (as in original script)
     for x in range(width - 1):
         for y in range(height - 1):
             if (
@@ -92,11 +84,11 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, i
             ):
                 binaryImage[y + 1, x + 1] = 0
 
-    # Invert image if requested (swap black and white)
+    # Invert image if requested
     if invert:
         binaryImage = 255 - binaryImage
 
-    # Output image.bmp (preview of the binary pattern)
+    # Output image.bmp (preview)
     cv2.imwrite("image.bmp", binaryImage)
 
     # The GDSII file is called a library, which contains multiple cells.
@@ -109,26 +101,21 @@ def main(fileName, sizeOfTheCell, layerNum, isDither, threshold_offset, scale, i
     unitCell.add(square)
 
     grid = lib.new_cell("GRID")
-    ys = 0.0
-    for y in range(height):
-        xs = 0.0
-        for x in range(width):
-            b = binaryImage[y, x]
-            if b == 0:
-                grid.add(
-                    gdspy.CellReference(
-                        unitCell, (xs * sizeOfTheCell, ys * sizeOfTheCell)
-                    )
-                )
 
-            xs += 1.0
-        ys += 1.0
+    # IMPORTANT: keep original orientation mapping: (x, height - y - 1)
+    for x in range(width):
+        for y in range(height):
+            if binaryImage[y, x] == 0:
+                # print(f"({x}, {y}) is black")
+                cell = gdspy.CellReference(unitCell, origin=(x, height - y - 1))
+                grid.add(cell)
 
-    # Scaling needs to be done to align the minimum feature size to sizeOfTheCell
+    scaledGrid = gdspy.CellReference(
+        grid, origin=(0, 0), magnification=float(sizeOfTheCell)
+    )
+
+    # Add the top-cell to a layout and save
     top = lib.new_cell("TOP")
-    scaleFactor = sizeOfTheCell
-    scaledGrid = gdspy.CellReference(grid, (0.0, 0.0), magnification=scaleFactor)
-
     top.add(scaledGrid)
     lib.write_gds("image.gds")
 

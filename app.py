@@ -97,6 +97,8 @@ def convert_to_gds(
                 os.path.join(out_dir, os.path.basename(bmp_src)),
             )
 
+        # First return: path for the DownloadButton
+        # Second return: path for the BMP preview
         return gds_out, bmp_out
 
 
@@ -140,7 +142,11 @@ inputs = [
 ]
 
 outputs = [
-    gr.File(label="Download GDS file"),
+    # Dedicated, clearly visible download button
+    gr.DownloadButton(
+        label="Download GDS file",
+        value=None,
+    ),
     gr.Image(
         label="Preview of binary image (BMP)",
         type="filepath",
@@ -155,7 +161,8 @@ demo = gr.Interface(
     description=(
         "Upload an image, choose cell size and layer, and convert it to a GDSII layout "
         "using the original picToGDS script.\n\n"
-        "Play with the offset slider and submit again, if result is not as desired."
+        "Play with the offset if the result is not as desired. "
+        "After conversion, use the **Download GDS file** button to save the layout."
     ),
 )
 

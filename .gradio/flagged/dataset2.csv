@@ -1,0 +1,1 @@
+Input image (jpg / png / bmp / …),Cell size (µm),GDS layer number,Scale factor,Use Floyd–Steinberg dithering (-d),Threshold offset (relative to Otsu),Invert GDS (black ↔ white),Download GDS file,Preview of binary image (BMP),timestamp
